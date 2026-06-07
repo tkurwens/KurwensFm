@@ -54,79 +54,59 @@ h2{color:#1db954;}
 const STREAM =
 "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
 
-const audio = document.getElementById("audio");
+const audio = document.getElementById("radio");
 audio.src = STREAM;
 
+let playing = false;
 let last = "";
 
-function start(){
-    audio.play();
-    readMetadata();
-}
+const JSON_URL = "https://github.com/tkurwens/KurwensFm/blob/main/nowplaying.json";
 
-/* ================= ICY REAL READER ================= */
-async function readMetadata(){
+document.getElementById("btn").onclick = async () => {
 
-    const ctx = new AudioContext();
-    const src = ctx.createMediaElementSource(audio);
-    src.connect(ctx.destination);
+    if(!playing){
+        audio.play();
+        startJSON();
+        playing = true;
+        document.getElementById("btn").innerText = "STOP";
+    } else {
+        audio.pause();
+        playing = false;
+        document.getElementById("btn").innerText = "PLAY";
+    }
+};
+    
+function startJSON(){
 
-    const reader = await fetch(STREAM, {
-        headers: { "Icy-MetaData": "1" }
-    }).catch(()=>null);
+    setInterval(async () => {
 
-    if(!reader || !reader.body) return;
+        if(!playing) return;
 
-    const stream = reader.body.getReader();
+        try {
+            const res = await fetch(JSON_URL + "?t=" + Date.now());
+            const data = await res.json();
 
-    let buffer = new Uint8Array();
+            const current = data.artist + data.title;
 
-    while(true){
+            if(current === last) return;
+            last = current;
 
-        const { value, done } = await stream.read();
-        if(done) break;
+            document.getElementById("artist").innerText = data.artist || "---";
+            document.getElementById("title").innerText = data.title || "---";
+            document.getElementById("album").innerText = "Album: " + (data.album || "---");
+            document.getElementById("year").innerText = "Rok: " + (data.year || "---");
 
-        buffer = value;
-
-        const text = new TextDecoder().decode(buffer);
-
-        if(text.includes("StreamTitle='")){
-
-            const raw = text.split("StreamTitle='")[1].split("';")[0];
-
-            if(raw === last) continue;
-            last = raw;
-
-            let artist = "Unknown";
-            let title = raw;
-
-            if(raw.includes("-")){
-                [artist, title] = raw.split("-");
+            if(data.cover){
+                document.getElementById("cover").src = data.cover;
             }
 
-            document.getElementById("artist").innerText = artist.trim();
-            document.getElementById("title").innerText = title.trim();
-
-            loadCover(artist, title);
-        }
-    }
-}
-
-/* ================= COVER ================= */
-function loadCover(a,t){
-
-    fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(a+" "+t)}&limit=1`)
-    .then(r=>r.json())
-    .then(d=>{
-
-        if(d.results && d.results[0]){
-            document.getElementById("cover").src =
-                d.results[0].artworkUrl100.replace("100x100","300x300");
+        } catch(e){
+            console.log("JSON error", e);
         }
 
-    });
-
+    }, 4000);
 }
+
 
 </script>
 
