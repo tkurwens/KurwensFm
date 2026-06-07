@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kurwens FM</title>
+<title>Radio</title>
 
 <style>
 body {
@@ -14,7 +14,7 @@ body {
     align-items: center;
     background: #121212;
     color: white;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
 }
 
 .player {
@@ -23,7 +23,6 @@ body {
     border-radius: 15px;
     width: 320px;
     text-align: center;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
 #cover {
@@ -32,18 +31,6 @@ body {
     border-radius: 10px;
     object-fit: cover;
     background: #333;
-}
-
-h2 {
-    margin: 10px 0 5px;
-    color: #1db954;
-    font-size: 20px;
-}
-
-p {
-    margin: 4px 0;
-    color: #ccc;
-    font-size: 14px;
 }
 
 button {
@@ -55,7 +42,6 @@ button {
     color: white;
     font-weight: bold;
     cursor: pointer;
-    transition: 0.3s;
 }
 
 button:hover {
@@ -77,17 +63,17 @@ button:hover {
 
     <button id="btn">PLAY</button>
 
-    <audio id="radio"></audio>
+    <audio id="radio" crossorigin="anonymous"></audio>
 
 </div>
 
 <script>
 
-/* ================= STREAM ================= */
+/* STREAM */
 const STREAM =
 "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
 
-/* ================= JSON ================= */
+/* JSON */
 const JSON_URL =
 "https://raw.githubusercontent.com/tkurwens/KurwensFm/main/nowplaying.json";
 
@@ -98,33 +84,27 @@ let playing = false;
 let interval = null;
 let lastTrack = "";
 
-/* ================= PLAY BUTTON ================= */
+/* ================= PLAY ================= */
 document.getElementById("btn").addEventListener("click", async () => {
 
-    if (!playing) {
+    try {
+        audio.muted = false;
+        audio.volume = 1.0;
 
-        try {
-            await audio.play();
-        } catch (e) {
-            console.log("Audio play blocked:", e);
-        }
+        await audio.play();
 
         playing = true;
         document.getElementById("btn").innerText = "STOP";
 
         startMetadata();
 
-    } else {
-
-        audio.pause();
-        playing = false;
-        document.getElementById("btn").innerText = "PLAY";
-
-        if (interval) clearInterval(interval);
+    } catch (e) {
+        console.log("PLAY ERROR:", e);
+        alert("Kliknij jeszcze raz PLAY (przeglądarka mogła zablokować audio)");
     }
 });
 
-/* ================= METADATA SAFE ================= */
+/* ================= METADATA ================= */
 function startMetadata() {
 
     interval = setInterval(async () => {
@@ -134,14 +114,9 @@ function startMetadata() {
         try {
 
             const res = await fetch(JSON_URL + "?t=" + Date.now());
-
-            if (!res.ok) return;
-
             const data = await res.json();
 
-            if (!data) return;
-
-            const current = (data.artist || "") + "-" + (data.title || "");
+            const current = data.artist + data.title;
 
             if (current === lastTrack) return;
             lastTrack = current;
@@ -156,7 +131,7 @@ function startMetadata() {
             }
 
         } catch (e) {
-            console.log("Metadata error:", e);
+            console.log("JSON error:", e);
         }
 
     }, 4000);
