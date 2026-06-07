@@ -52,7 +52,7 @@
 <body>
 
 <div class="player-container">
-    <!-- Ładne fabryczne tło retro, dopóki nie pobierze się okładka z pliku -->
+    <!-- Poprawiony domyślny obrazek placeholder, gdy nie ma okładki -->
     <img id="album-art" src="https://unsplash.com" alt="Okładka">
     
     <h2 id="song-title">Kurwens FM</h2>
@@ -63,12 +63,15 @@
 </div>
 
 <script>
-    // PEŁNY, POPRAWNY I ZABEZPIECZONY LINK DO TWOJEGO RADIA
     const RADIO_STREAM = "https://allorigins.win/raw?url=" + encodeURIComponent("https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599");
 
     let audioCtx, source, processor;
     let isPlaying = false;
     const playBtn = document.getElementById('play-pause');
+
+    // Zmienne do przechowywania aktualnego stanu metadanych
+    let currentAlbum = "...";
+    let currentYear = "...";
 
     playBtn.addEventListener('click', async () => {
         if (!isPlaying) {
@@ -110,7 +113,7 @@
         let textDecoder = new TextDecoder('utf-8');
         let rawText = textDecoder.decode(bytes);
 
-        // Wyciąganie Tytułu i Wykonawcy z bajtów piosenki w locie
+        // Wyciąganie Tytułu i Wykonawcy
         if (rawText.includes("StreamTitle='")) {
             let songData = rawText.split("StreamTitle='")[1].split("';")[0];
             if (songData.includes("-")) {
@@ -120,18 +123,32 @@
             }
         }
         
-        // Wyciąganie Twojego autorskiego tagu ALBUMU zaszytego w pliku MP3
+        // Wyciąganie tagu ALBUMU i dynamiczna zmiana okładki
         if (rawText.includes("StreamAlbum='")) {
-            let album = rawText.split("StreamAlbum='")[1].split("';")[0];
-            document.getElementById('song-meta').innerText = `Album: ${album}`;
+            let album = rawText.split("StreamAlbum='")[1].split("';")[0].trim();
+            if (album && album !== currentAlbum) {
+                currentAlbum = album;
+                updateMetaText();
+                
+                // Tworzenie poprawnej nazwy pliku graficznego z małych liter
+                let lowercaseAlbum = currentAlbum.toLowerCase();
+                document.getElementById('album-art').src = encodeURIComponent(lowercaseAlbum) + ".jpg";
+            }
         }
         
-        // Wyciąganie Twojego autorskiego tagu ROKU zaszytego w pliku MP3
+        // Wyciąganie tagu ROKU
         if (rawText.includes("StreamYear='")) {
-            let year = rawText.split("StreamYear='")[1].split("';")[0];
-            let currentMeta = document.getElementById('song-meta').innerText;
-           document.getElementById('album-art').src = encodeURIComponent(lowercaseAlbum) + ".jpg";
+            let year = rawText.split("StreamYear='")[1].split("';")[0].trim();
+            if (year && year !== currentYear) {
+                currentYear = year;
+                updateMetaText();
+            }
         }
+    }
+
+    // Pomocnicza funkcja aktualizująca tekst albumu i roku
+    function updateMetaText() {
+        document.getElementById('song-meta').innerText = `Album: ${currentAlbum} | Rok: ${currentYear}`;
     }
 
     function stopStream() {
