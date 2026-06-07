@@ -2,11 +2,10 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kurwens FM</title>
+<title>Radio</title>
 
 <style>
-body {
+body{
     margin:0;
     height:100vh;
     display:flex;
@@ -17,104 +16,86 @@ body {
     font-family:Arial;
 }
 
-.player {
-    background:#1e1e1e;
-    padding:25px;
-    border-radius:15px;
-    width:320px;
+.box{
     text-align:center;
+    background:#1e1e1e;
+    padding:20px;
+    border-radius:15px;
+    width:300px;
 }
 
-#cover {
+img{
     width:200px;
     height:200px;
     border-radius:10px;
-    object-fit:cover;
     background:#333;
 }
 
-h2 { margin:10px 0 5px; color:#1db954; }
-p { margin:4px 0; color:#ccc; }
-
-button {
-    margin-top:15px;
-    padding:10px 25px;
-    border:none;
-    border-radius:20px;
-    background:#1db954;
-    color:white;
-    font-weight:bold;
-    cursor:pointer;
-}
+h2{color:#1db954;}
 </style>
 </head>
 
 <body>
 
-<div class="player">
+<div class="box">
 
-    <img id="cover" src="https://via.placeholder.com/300">
-
+    <img id="cover">
     <h2 id="title">Loading...</h2>
     <p id="artist">---</p>
-    <p id="album">Album: ---</p>
-    <p id="year">Rok: ---</p>
 
-    <button id="btn">PLAY</button>
+    <button onclick="start()">PLAY</button>
 
-    <audio id="radio"></audio>
+    <audio id="audio" crossorigin="anonymous"></audio>
 
 </div>
 
 <script>
 
-/* ================= STREAM ================= */
 const STREAM =
 "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
 
-const audio = document.getElementById("radio");
+const audio = document.getElementById("audio");
 audio.src = STREAM;
 
-const btn = document.getElementById("btn");
+let last = "";
 
-let playing = false;
-let lastTrack = "";
+function start(){
+    audio.play();
+    readMetadata();
+}
 
-/* ================= PLAY ================= */
-btn.onclick = async () => {
-    if(!playing){
-        try {
-            await audio.play();
-        } catch(e){
-            console.log("Autoplay blocked", e);
-        }
+/* ================= ICY REAL READER ================= */
+async function readMetadata(){
 
-        startPollingMetadata();
-        btn.innerText = "STOP";
-        playing = true;
-    } else {
-        audio.pause();
-        btn.innerText = "PLAY";
-        playing = false;
-    }
-};
+    const ctx = new AudioContext();
+    const src = ctx.createMediaElementSource(audio);
+    src.connect(ctx.destination);
 
-/* ================= METADATA POLLING ================= */
-function startPollingMetadata(){
+    const reader = await fetch(STREAM, {
+        headers: { "Icy-MetaData": "1" }
+    }).catch(()=>null);
 
-    setInterval(async () => {
+    if(!reader || !reader.body) return;
 
-        if(!playing) return;
+    const stream = reader.body.getReader();
 
-        try {
-            const res = await fetch("https://uk23freenew.listen2myradio.com");
-            const html = await res.text();
+    let buffer = new Uint8Array();
 
-            const match = html.match(/StreamTitle='(.*?)'/);
+    while(true){
 
-            if(!match) return;
+        const { value, done } = await stream.read();
+        if(done) break;
 
-            const raw = match[1];
+        buffer = value;
+
+        const text = new TextDecoder().decode(buffer);
+
+        if(text.includes("StreamTitle='")){
+
+            const raw = text.split("StreamTitle='")[1].split("';")[0];
+
+            if(raw === last) continue;
+            last = raw;
 
             let artist = "Unknown";
             let title = raw;
@@ -123,43 +104,27 @@ function startPollingMetadata(){
                 [artist, title] = raw.split("-");
             }
 
-            artist = artist.trim();
-            title = title.trim();
-
-            const current = artist + " - " + title;
-
-            if(current === lastTrack) return;
-            lastTrack = current;
-
-            document.getElementById("artist").innerText = artist;
-            document.getElementById("title").innerText = title;
-
-            document.getElementById("album").innerText = "Album: ---";
-            document.getElementById("year").innerText = "Rok: ---";
+            document.getElementById("artist").innerText = artist.trim();
+            document.getElementById("title").innerText = title.trim();
 
             loadCover(artist, title);
-
-        } catch(e){
-            console.log("metadata error", e);
         }
-
-    }, 6000);
+    }
 }
 
 /* ================= COVER ================= */
-function loadCover(artist, title){
+function loadCover(a,t){
 
-    fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artist+" "+title)}&limit=1`)
-    .then(r => r.json())
-    .then(d => {
+    fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(a+" "+t)}&limit=1`)
+    .then(r=>r.json())
+    .then(d=>{
 
         if(d.results && d.results[0]){
             document.getElementById("cover").src =
                 d.results[0].artworkUrl100.replace("100x100","300x300");
         }
 
-    })
-    .catch(()=>{});
+    });
 
 }
 
