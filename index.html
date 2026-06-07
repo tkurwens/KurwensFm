@@ -32,8 +32,9 @@
             margin-bottom: 20px;
             background-color: #333;
         }
-        h2 { margin: 10px 0 5px 0; font-size: 20px; }
-        p { color: #aaaaaa; margin: 0 0 20px 0; font-size: 14px; }
+        h2 { margin: 10px 0 5px 0; font-size: 20px; color: #1db954; }
+        .artist { color: #ffffff; font-size: 16px; margin: 0 0 5px 0; font-weight: bold; }
+        .meta-text { color: #888888; font-size: 13px; margin: 0 0 25px 0; font-style: italic; }
         .play-btn {
             background-color: #1db954;
             color: white;
@@ -51,131 +52,93 @@
 <body>
 
 <div class="player-container">
-    <!-- Tutaj automatycznie pojawi się okładka -->
+    <!-- Ładne fabryczne tło retro, dopóki nie pobierze się okładka z pliku -->
     <img id="album-art" src="https://unsplash.com" alt="Okładka">
     
-    <h2 id="song-title">Wczytywanie tytułu...</h2>
-    <p id="artist-name">Radio Online</p>
+    <h2 id="song-title">Kurwens FM</h2>
+    <p class="artist" id="artist-name">Stacja Online</p>
+    <p class="meta-text" id="song-meta">Album: ... | Rok: ...</p>
     
     <button class="play-btn" id="play-pause">ODTWÓRZ</button>
 </div>
 
 <script>
-    // 1. USTAWIENIA TWOJEGO STRUMIENIA (Podmień na swoje dane z Listen2MyRadio)
-   const STREAM_URL = "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
-    const STATS_URL = "https://listen2myradio.com";
- // Adres do statystyk Shoutcast
+    // PEŁNY, POPRAWNY I ZABEZPIECZONY LINK DO TWOJEGO RADIA
+    const RADIO_STREAM = "https://allorigins.win/raw?url=" + encodeURIComponent("https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599");
 
-    const audio = new Audio(STREAM_URL);
-    const playBtn = document.getElementById('play-pause');
+    let audioCtx, source, processor;
     let isPlaying = false;
+    const playBtn = document.getElementById('play-pause');
 
-    // Odtwarzanie i zatrzymywanie
-    playBtn.addEventListener('click', () => {
+    playBtn.addEventListener('click', async () => {
         if (!isPlaying) {
-            audio.load(); // Odświeża bufor strumienia na żywo
-            audio.play();
+            startStream();
             playBtn.innerText = "ZATRZYMAJ";
             isPlaying = true;
         } else {
-            audio.pause();
+            stopStream();
             playBtn.innerText = "ODTWÓRZ";
             isPlaying = false;
         }
     });
 
-    // 2. FUNKCJA POBIERANIA TYTUŁU I OKŁADKI Z ITUNES API
-    async function updateTrackInfo() {
+    async function startStream() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
         try {
-            // Pobieranie danych tekstowych o aktualnym utworze z serwera
-            const response = await fetch(STATS_URL);
-            const data = await response.text();
+            const response = await fetch(RADIO_STREAM, {
+                headers: { 'Icy-MetaData': '1' } 
+            });
             
-            // Wyciąganie tytułu z pliku 7.html serwera Shoutcast
-            const parser = new DOMParser();
-            const htmlDoc = parser.parseFromString(data, 'text/html');
-            const rawMetadata = htmlDoc.body.innerText; 
-            const currentSong = rawMetadata.split(',')[6]; // Siódmy element to zazwyczaj "Wykonawca - Tytuł"
+            const metaInt = parseInt(response.headers.get('icy-metaint')) || 16000;
+            const reader = response.body.getReader();
+            
+            processor = audioCtx.createScriptProcessor(4096, 0, 2);
+            processor.connect(audioCtx.destination);
 
-            if (currentSong && currentSong !== "Stream is up but no song playing") {
-                document.getElementById('song-title').innerText = currentSong;
-                
-                // Szukanie okładki w darmowej bazie iTunes API
-                const searchUrl = `https://apple.com{encodeURIComponent(currentSong)}&limit=1&entity=song`;
-                const itunesResponse = await fetch(searchUrl);
-                const itunesData = await itunesResponse.json();
-
-                if (itunesData.results.length > 0) {
-                    // Podmiana małej okładki na wersję w wyższej rozdzielczości (400x400)
-                    let artUrl = itunesData.results[0].artworkUrl100.replace('100x100bb', '400x400bb');
-                    document.getElementById('album-art').src = artUrl;
-                    document.getElementById('artist-name').innerText = itunesData.results[0].artistName;
-                }
+            while (isPlaying) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                parseByteArray(value, metaInt);
             }
-        } catch (error) {
-            console.log("Błąd pobierania metadanych. Serwer może blokować zapytania CORS.");
+        } catch (e) {
+            console.log("Oczekiwanie na połączenie ze strumieniem ICY...");
         }
     }
 
-    // Odświeżaj tytuł i okładkę co 15 sekund
-    setInterval(updateTrackInfo, 15000);
-    updateTrackInfo();
-        // 2. FUNKCJA POBIERANIA TYTUŁU I OKŁADKI (System podwójnego sprawdzania Apple + Last.fm)
-    async function updateTrackInfo() {
-        try {
-            const response = await fetch(STATS_URL);
-            const data = await response.text();
-            
-            const parser = new DOMParser();
-            const htmlDoc = parser.parseFromString(data, 'text/html');
-            const rawMetadata = htmlDoc.body.innerText; 
-            const currentSong = rawMetadata.split(','); 
+    function parseByteArray(bytes, metaInt) {
+        let textDecoder = new TextDecoder('utf-8');
+        let rawText = textDecoder.decode(bytes);
 
-            if (currentSong && currentSong !== "Stream is up but no song playing") {
-                document.getElementById('song-title').innerText = currentSong;
-                
-                // KROK 1: Najpierw szukamy w bazie iTunes
-                const searchUrl = `https://apple.com{encodeURIComponent(currentSong)}&limit=1&entity=song`;
-                const itunesResponse = await fetch(searchUrl);
-                const itunesData = await itunesResponse.json();
-
-                if (itunesData.results.length > 0) {
-                    // Znaleziono w iTunes!
-                    let artUrl = itunesData.results[0].artworkUrl100.replace('100x100bb', '400x400bb');
-                    document.getElementById('album-art').src = artUrl;
-                    document.getElementById('artist-name').innerText = itunesData.results[0].artistName;
-                } else {
-                    // KROK 2: Awaria! Brak w iTunes -> Automatycznie pytamy bazę Last.fm
-                    console.log("Brak w iTunes, szukam w Last.fm...");
-                    const lastFmApiKey = "b25b959554ed76058ac2207b2b4f9e43"; 
-                    const lastFmUrl = `https://audioscrobbler.com{encodeURIComponent(currentSong)}&api_key=${lastFmApiKey}&format=json&limit=1`;
-                    
-                    const lastFmResponse = await fetch(lastFmUrl);
-                    const lastFmData = await lastFmResponse.json();
-                    
-                    if (lastFmData.results && lastFmData.results.trackmatches.track.length > 0) {
-                        const track = lastFmData.results.trackmatches.track[0];
-                        document.getElementById('artist-name').innerText = track.artist;
-                        
-                        if (track.image && track.image.length > 0) {
-                            let artUrl = track.image[track.image.length - 1]['#text'];
-                            if (artUrl) {
-                                document.getElementById('album-art').src = artUrl;
-                            } else {
-                                document.getElementById('album-art').src = "https://unsplash.com";
-                            }
-                        }
-                    }
-                }
+        // Wyciąganie Tytułu i Wykonawcy z bajtów piosenki w locie
+        if (rawText.includes("StreamTitle='")) {
+            let songData = rawText.split("StreamTitle='")[1].split("';")[0];
+            if (songData.includes("-")) {
+                let parts = songData.split('-');
+                document.getElementById('artist-name').innerText = parts[0].trim();
+                document.getElementById('song-title').innerText = parts[1].trim();
             }
-        } catch (error) {
-            console.log("Błąd pobierania metadanych z serwerów muzycznych.");
+        }
+        
+        // Wyciąganie Twojego autorskiego tagu ALBUMU zaszytego w pliku MP3
+        if (rawText.includes("StreamAlbum='")) {
+            let album = rawText.split("StreamAlbum='")[1].split("';")[0];
+            document.getElementById('song-meta').innerText = `Album: ${album}`;
+        }
+        
+        // Wyciąganie Twojego autorskiego tagu ROKU zaszytego w pliku MP3
+        if (rawText.includes("StreamYear='")) {
+            let year = rawText.split("StreamYear='")[1].split("';")[0];
+            let currentMeta = document.getElementById('song-meta').innerText;
+            document.getElementById('song-meta').innerText = currentMeta + ` | Rok: ${year}`;
         }
     }
 
-    // Odświeżaj tytuł i okładkę co 15 sekund
-    setInterval(updateTrackInfo, 15000);
-    updateTrackInfo();
+    function stopStream() {
+        if (audioCtx) audioCtx.close();
+        isPlaying = false;
+    }
 </script>
+
 </body>
 </html>
