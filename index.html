@@ -84,50 +84,64 @@ button:hover {
 <script>
 
 /* ================= STREAM ================= */
-const STREAM ="https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
+const STREAM =
+"https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
 
-/* ================= JSON METADATA ================= */
-const JSON_URL ="https://raw.githubusercontent.com/tkurwens/KurwensFm/main/nowplaying.json"; // <- wrzuć plik do repo GitHub Pages
+/* ================= JSON ================= */
+const JSON_URL =
+"https://raw.githubusercontent.com/tkurwens/KurwensFm/main/nowplaying.json";
 
 const audio = document.getElementById("radio");
 audio.src = STREAM;
 
 let playing = false;
+let interval = null;
 let lastTrack = "";
 
-/* ================= PLAY / STOP ================= */
-document.getElementById("btn").onclick = async () => {
+/* ================= PLAY BUTTON ================= */
+document.getElementById("btn").addEventListener("click", async () => {
 
     if (!playing) {
+
         try {
             await audio.play();
         } catch (e) {
-            console.log("Autoplay blocked:", e);
+            console.log("Audio play blocked:", e);
         }
 
-        startMetadataLoop();
         playing = true;
         document.getElementById("btn").innerText = "STOP";
 
+        startMetadata();
+
     } else {
+
         audio.pause();
         playing = false;
         document.getElementById("btn").innerText = "PLAY";
+
+        if (interval) clearInterval(interval);
     }
-};
+});
 
-/* ================= METADATA LOOP ================= */
-function startMetadataLoop() {
+/* ================= METADATA SAFE ================= */
+function startMetadata() {
 
-    setInterval(async () => {
+    interval = setInterval(async () => {
 
         if (!playing) return;
 
         try {
+
             const res = await fetch(JSON_URL + "?t=" + Date.now());
+
+            if (!res.ok) return;
+
             const data = await res.json();
 
-            const current = data.artist + " - " + data.title;
+            if (!data) return;
+
+            const current = (data.artist || "") + "-" + (data.title || "");
 
             if (current === lastTrack) return;
             lastTrack = current;
@@ -142,7 +156,7 @@ function startMetadataLoop() {
             }
 
         } catch (e) {
-            console.log("JSON error:", e);
+            console.log("Metadata error:", e);
         }
 
     }, 4000);
