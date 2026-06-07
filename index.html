@@ -31,7 +31,6 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             margin-bottom: 20px;
             background-color: #333;
-            transition: opacity 0.3s ease;
         }
         h2 { margin: 10px 0 5px 0; font-size: 20px; color: #1db954; }
         .artist { color: #ffffff; font-size: 16px; margin: 0 0 5px 0; font-weight: bold; }
@@ -53,117 +52,101 @@
 <body>
 
 <div class="player-container">
+    <!-- Przykładowy, prawdziwy link do obrazka, żeby nie było pustego pola na start -->
     <img id="album-art" src="https://unsplash.com" alt="Okładka">
     
     <h2 id="song-title">Kurwens FM</h2>
     <p class="artist" id="artist-name">Stacja Online</p>
-    <p class="meta-text" id="song-meta">Album: Brak danych</p>
+    <p class="meta-text" id="song-meta">Album:  | Rok: ...</p>
     
     <button class="play-btn" id="play-pause">ODTWÓRZ</button>
 </div>
 
-<!-- Niewidoczny odtwarzacz audio, który stabilnie i bezbłędnie odtwarza dźwięk -->
-<audio id="radio-player" crossorigin="anonymous"></audio>
-
 <script>
-    // Bezpośredni link do strumienia (bez proxy, dla stabilności odtwarzacza HTML5)
-    const STREAM_URL = "https://listen2myradio.com";
-    // Link proxy używany wyłącznie do bezpiecznego czytania samych metadanych tekstowych
-    const META_STREAM = "https://allorigins.win" + encodeURIComponent(STREAM_URL);
-    const DEFAULT_ART = "https://unsplash.com";
+    // PEŁNY, POPRAWNY I ZABEZPIECZONY LINK DO TWOJEGO RADIA
+    const RADIO_STREAM = "https://allorigins.win" + encodeURIComponent("https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599");
 
-    const audio = document.getElementById('radio-player');
-    const playBtn = document.getElementById('play-pause');
-    
+    let audioCtx, source, processor;
     let isPlaying = false;
-    let currentTrack = ""; 
-    let metaReader = null;
+    const playBtn = document.getElementById('play-pause');
 
-    playBtn.addEventListener('click', () => {
+    // Pomocnicze zmienne globalne do zapamiętania tekstu
+    let savedAlbum = "...";
+    let savedYear = "...";
+
+    playBtn.addEventListener('click', async () => {
         if (!isPlaying) {
-            audio.src = STREAM_URL;
-            audio.play()
-                .then(() => {
-                    playBtn.innerText = "ZATRZYMAJ";
-                    isPlaying = true;
-                    startMetaFetch(); // Uruchomienie pobierania nazw piosenek i okładek
-                })
-                .catch(err => console.error("Błąd odtwarzania:", err));
+            startStream();
+            playBtn.innerText = "ZATRZYMAJ";
+            isPlaying = true;
         } else {
-            audio.pause();
-            audio.src = ""; // Reset strumienia, aby nie buforował w tle
+            stopStream();
             playBtn.innerText = "ODTWÓRZ";
             isPlaying = false;
-            if (metaReader) metaReader.cancel();
         }
     });
 
-    // Funkcja czytająca nagłówki ICY w tle bez blokowania głośników
-    async function startMetaFetch() {
+    async function startStream() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
         try {
-            const response = await fetch(META_STREAM, { headers: { 'Icy-MetaData': '1' } });
-            const metaInt = parseInt(response.headers.get('icy-metaint')) || 16000;
-            metaReader = response.body.getReader();
+            const response = await fetch(RADIO_STREAM, {
+                headers: { 'Icy-MetaData': '1' } 
+            });
             
-            let textDecoder = new TextDecoder('utf-8');
+            const metaInt = parseInt(response.headers.get('icy-metaint')) || 16000;
+            const reader = response.body.getReader();
+            
+            processor = audioCtx.createScriptProcessor(4096, 0, 2);
+            processor.connect(audioCtx.destination);
 
             while (isPlaying) {
-                const { done, value } = await metaReader.read();
+                const { done, value } = await reader.read();
                 if (done) break;
-                
-                let rawText = textDecoder.decode(value);
-
-                if (rawText.includes("StreamTitle='")) {
-                    let parts = rawText.split("StreamTitle='");
-                    if (parts.length > 1) {
-                        let songData = parts[1].split("';")[0];
-                        
-                        if (songData && songData !== currentTrack) {
-                            currentTrack = songData;
-                            
-                            if (songData.includes("-")) {
-                                let trackParts = songData.split('-');
-                                let artist = trackParts[0].trim();
-                                let title = trackParts[1].trim();
-                                
-                                document.getElementById('artist-name').innerText = artist;
-                                document.getElementById('song-title').innerText = title;
-                                
-                                fetchCoverArt(artist, title);
-                            }
-                        }
-                    }
-                }
+                parseByteArray(value, metaInt);
             }
         } catch (e) {
-            console.log("Wyszukiwanie metadanych...");
+            console.log("Oczekiwanie na połączenie ze strumieniem ICY...");
         }
     }
 
-    // Pobieranie okładek w locie z bazy iTunes
-    async function fetchCoverArt(artist, title) {
-        let query = encodeURIComponent(`${artist} ${title}`);
-        let url = `https://apple.com{query}&media=music&limit=1`;
+    function parseByteArray(bytes, metaInt) {
+        let textDecoder = new TextDecoder('utf-8');
+        let rawText = textDecoder.decode(bytes);
 
-        try {
-            let res = await fetch(url);
-            let data = await res.json();
-
-            if (data.results && data.results.length > 0) {
-                let track = data.results[0];
-                let highResCover = track.artworkUrl100.replace("100x100bb", "300x300bb");
-                
-                document.getElementById('album-art').src = highResCover;
-                document.getElementById('song-meta').innerText = `Album: ${track.collectionName || 'Brak danych'}`;
-            } else {
-                document.getElementById('album-art').src = DEFAULT_ART;
-                document.getElementById('song-meta').innerText = "Album: Nieznany";
+        // Wyciąganie Tytułu i Wykonawcy z bajtów piosenki w locie
+        if (rawText.includes("StreamTitle='")) {
+            let songData = rawText.split("StreamTitle='")[1].split("';")[0];
+            if (songData.includes("-")) {
+                let parts = songData.split('-');
+                document.getElementById('artist-name').innerText = parts[0].trim();
+                document.getElementById('song-title').innerText = parts[1].trim();
             }
-        } catch (error) {
-            document.getElementById('album-art').src = DEFAULT_ART;
         }
+        
+        // Wyciąganie Twojego autorskiego tagu ALBUMU zaszytego w pliku MP3
+        if (rawText.includes("StreamAlbum='")) {
+            savedAlbum = rawText.split("StreamAlbum='")[1].split("';")[0];
+            document.getElementById('song-meta').innerText = `Album: ${savedAlbum} | Rok: ${savedYear}`;
+            
+            // NAPRAWIONY BŁĄD: Tworzymy zmienną lowercaseAlbum z pobranego albumu, zmieniamy na małe litery i podmieniamy plik jpg
+            let lowercaseAlbum = savedAlbum.toLowerCase().trim();
+            document.getElementById('album-art').src = encodeURIComponent(lowercaseAlbum) + ".jpg";
+        }
+        
+        // Wyciąganie Twojego autorskiego tagu ROKU zaszytego w pliku MP3
+        if (rawText.includes("StreamYear='")) {
+            savedYear = rawText.split("StreamYear='")[1].split("';")[0];
+            document.getElementById('song-meta').innerText = `Album: ${savedAlbum} | Rok: ${savedYear}`;
+        }
+    }
+
+    function stopStream() {
+        if (audioCtx) audioCtx.close();
+        isPlaying = false;
     }
 </script>
 
 </body>
 </html>
+
