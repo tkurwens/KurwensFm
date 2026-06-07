@@ -53,7 +53,7 @@ button {
 
 <div class="player">
 
-    <img id="cover" src="https://via.placeholder.com/300" />
+    <img id="cover" src="https://via.placeholder.com/300">
 
     <h2 id="title">Loading...</h2>
     <p id="artist">---</p>
@@ -78,15 +78,18 @@ audio.src = STREAM;
 const btn = document.getElementById("btn");
 
 let playing = false;
-
-/* 🔥 CACHE AKTUALNEGO UTWORU */
 let lastTrack = "";
 
-/* ================= PLAY / STOP ================= */
+/* ================= PLAY ================= */
 btn.onclick = async () => {
     if(!playing){
-        await audio.play();
-        startMetadata();
+        try {
+            await audio.play();
+        } catch(e){
+            console.log("Autoplay blocked", e);
+        }
+
+        startPollingMetadata();
         btn.innerText = "STOP";
         playing = true;
     } else {
@@ -96,87 +99,68 @@ btn.onclick = async () => {
     }
 };
 
-/* ================= ICY METADATA ================= */
-async function startMetadata(){
+/* ================= METADATA POLLING ================= */
+function startPollingMetadata(){
 
-    try{
-        const res = await fetch(STREAM, {
-            headers: { "Icy-MetaData": "1" }
-        });
+    setInterval(async () => {
 
-        const metaInt = parseInt(res.headers.get("icy-metaint")) || 16000;
-        const reader = res.body.getReader();
+        if(!playing) return;
 
-        let count = 0;
-        let buffer = new Uint8Array();
+        try {
+            const res = await fetch("https://uk23freenew.listen2myradio.com");
+            const html = await res.text();
 
-        while(playing){
-            const { value, done } = await reader.read();
-            if(done) break;
+            const match = html.match(/StreamTitle='(.*?)'/);
 
-            count += value.length;
-            buffer = value;
+            if(!match) return;
 
-            if(count >= metaInt){
-                const text = new TextDecoder().decode(buffer);
-                parseMetadata(text);
-                count = 0;
+            const raw = match[1];
+
+            let artist = "Unknown";
+            let title = raw;
+
+            if(raw.includes("-")){
+                [artist, title] = raw.split("-");
             }
+
+            artist = artist.trim();
+            title = title.trim();
+
+            const current = artist + " - " + title;
+
+            if(current === lastTrack) return;
+            lastTrack = current;
+
+            document.getElementById("artist").innerText = artist;
+            document.getElementById("title").innerText = title;
+
+            document.getElementById("album").innerText = "Album: ---";
+            document.getElementById("year").innerText = "Rok: ---";
+
+            loadCover(artist, title);
+
+        } catch(e){
+            console.log("metadata error", e);
         }
 
-    } catch(e){
-        console.log("Metadata error:", e);
-    }
-}
-
-/* ================= PARSE METADATA ================= */
-function parseMetadata(data){
-
-    if(!data.includes("StreamTitle='")) return;
-
-    const raw = data.split("StreamTitle='")[1].split("';")[0];
-
-    let artist = "Unknown";
-    let title = raw;
-
-    if(raw.includes("-")){
-        [artist, title] = raw.split("-");
-    }
-
-    artist = artist.trim();
-    title = title.trim();
-
-    const currentTrack = artist + " - " + title;
-
-    /* 🔥 FIX: NIE ODŚWIEŻAJ JEŚLI TEN SAM UTWÓR */
-    if(currentTrack === lastTrack) return;
-    lastTrack = currentTrack;
-
-    document.getElementById("artist").innerText = artist;
-    document.getElementById("title").innerText = title;
-
-    document.getElementById("album").innerText = "Album: ---";
-    document.getElementById("year").innerText = "Rok: ---";
-
-    loadCover(artist, title);
+    }, 6000);
 }
 
 /* ================= COVER ================= */
 function loadCover(artist, title){
 
-    const query = encodeURIComponent(artist + " " + title);
-
-    fetch(`https://itunes.apple.com/search?term=${query}&limit=1`)
+    fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artist+" "+title)}&limit=1`)
     .then(r => r.json())
-    .then(data => {
+    .then(d => {
 
-        if(data.results && data.results[0]){
+        if(d.results && d.results[0]){
             document.getElementById("cover").src =
-                data.results[0].artworkUrl100.replace("100x100", "300x300");
+                d.results[0].artworkUrl100.replace("100x100","300x300");
         }
 
     })
     .catch(()=>{});
+
 }
 
 </script>
