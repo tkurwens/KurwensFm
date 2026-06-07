@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurwens FM</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .player-container {
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
+            width: 320px;
+        }
+        #album-art {
+            width: 200px;
+            height: 200px;
+            border-radius: 10px;
+            object-fit: cover;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+            background-color: #333;
+        }
+        h2 { margin: 10px 0 5px 0; font-size: 20px; }
+        p { color: #aaaaaa; margin: 0 0 20px 0; font-size: 14px; }
+        .play-btn {
+            background-color: #1db954;
+            color: white;
+            border: none;
+            padding: 12px 35px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .play-btn:hover { background-color: #1ed760; transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+<div class="player-container">
+    <!-- Tutaj automatycznie pojawi się okładka -->
+    <img id="album-art" src="https://unsplash.com" alt="Okładka">
+    
+    <h2 id="song-title">Wczytywanie tytułu...</h2>
+    <p id="artist-name">Radio Online</p>
+    
+    <button class="play-btn" id="play-pause">ODTWÓRZ</button>
+</div>
+
+<script>
+    // 1. USTAWIENIA TWOJEGO STRUMIENIA (Podmień na swoje dane z Listen2MyRadio)
+    const STREAM_URL = "HTTP://95.154.195.3:37783/;stream.mp3";
+    const STATS_URL = "HTTP://95.154.195.3:37783/7.html"; // Adres do statystyk Shoutcast
+
+    const audio = new Audio(STREAM_URL);
+    const playBtn = document.getElementById('play-pause');
+    let isPlaying = false;
+
+    // Odtwarzanie i zatrzymywanie
+    playBtn.addEventListener('click', () => {
+        if (!isPlaying) {
+            audio.load(); // Odświeża bufor strumienia na żywo
+            audio.play();
+            playBtn.innerText = "ZATRZYMAJ";
+            isPlaying = true;
+        } else {
+            audio.pause();
+            playBtn.innerText = "ODTWÓRZ";
+            isPlaying = false;
+        }
+    });
+
+    // 2. FUNKCJA POBIERANIA TYTUŁU I OKŁADKI Z ITUNES API
+    async function updateTrackInfo() {
+        try {
+            // Pobieranie danych tekstowych o aktualnym utworze z serwera
+            const response = await fetch(STATS_URL);
+            const data = await response.text();
+            
+            // Wyciąganie tytułu z pliku 7.html serwera Shoutcast
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(data, 'text/html');
+            const rawMetadata = htmlDoc.body.innerText; 
+            const currentSong = rawMetadata.split(',')[6]; // Siódmy element to zazwyczaj "Wykonawca - Tytuł"
+
+            if (currentSong && currentSong !== "Stream is up but no song playing") {
+                document.getElementById('song-title').innerText = currentSong;
+                
+                // Szukanie okładki w darmowej bazie iTunes API
+                const searchUrl = `https://apple.com{encodeURIComponent(currentSong)}&limit=1&entity=song`;
+                const itunesResponse = await fetch(searchUrl);
+                const itunesData = await itunesResponse.json();
+
+                if (itunesData.results.length > 0) {
+                    // Podmiana małej okładki na wersję w wyższej rozdzielczości (400x400)
+                    let artUrl = itunesData.results[0].artworkUrl100.replace('100x100bb', '400x400bb');
+                    document.getElementById('album-art').src = artUrl;
+                    document.getElementById('artist-name').innerText = itunesData.results[0].artistName;
+                }
+            }
+        } catch (error) {
+            console.log("Błąd pobierania metadanych. Serwer może blokować zapytania CORS.");
+        }
+    }
+
+    // Odświeżaj tytuł i okładkę co 15 sekund
+    setInterval(updateTrackInfo, 15000);
+    updateTrackInfo();
+</script>
+
+</body>
+</html>
