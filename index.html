@@ -119,7 +119,62 @@
     // Odświeżaj tytuł i okładkę co 15 sekund
     setInterval(updateTrackInfo, 15000);
     updateTrackInfo();
-</script>
+        // 2. FUNKCJA POBIERANIA TYTUŁU I OKŁADKI (System podwójnego sprawdzania Apple + Last.fm)
+    async function updateTrackInfo() {
+        try {
+            const response = await fetch(STATS_URL);
+            const data = await response.text();
+            
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(data, 'text/html');
+            const rawMetadata = htmlDoc.body.innerText; 
+            const currentSong = rawMetadata.split(','); 
 
+            if (currentSong && currentSong !== "Stream is up but no song playing") {
+                document.getElementById('song-title').innerText = currentSong;
+                
+                // KROK 1: Najpierw szukamy w bazie iTunes
+                const searchUrl = `https://apple.com{encodeURIComponent(currentSong)}&limit=1&entity=song`;
+                const itunesResponse = await fetch(searchUrl);
+                const itunesData = await itunesResponse.json();
+
+                if (itunesData.results.length > 0) {
+                    // Znaleziono w iTunes!
+                    let artUrl = itunesData.results[0].artworkUrl100.replace('100x100bb', '400x400bb');
+                    document.getElementById('album-art').src = artUrl;
+                    document.getElementById('artist-name').innerText = itunesData.results[0].artistName;
+                } else {
+                    // KROK 2: Awaria! Brak w iTunes -> Automatycznie pytamy bazę Last.fm
+                    console.log("Brak w iTunes, szukam w Last.fm...");
+                    const lastFmApiKey = "b25b959554ed76058ac2207b2b4f9e43"; 
+                    const lastFmUrl = `https://audioscrobbler.com{encodeURIComponent(currentSong)}&api_key=${lastFmApiKey}&format=json&limit=1`;
+                    
+                    const lastFmResponse = await fetch(lastFmUrl);
+                    const lastFmData = await lastFmResponse.json();
+                    
+                    if (lastFmData.results && lastFmData.results.trackmatches.track.length > 0) {
+                        const track = lastFmData.results.trackmatches.track[0];
+                        document.getElementById('artist-name').innerText = track.artist;
+                        
+                        if (track.image && track.image.length > 0) {
+                            let artUrl = track.image[track.image.length - 1]['#text'];
+                            if (artUrl) {
+                                document.getElementById('album-art').src = artUrl;
+                            } else {
+                                document.getElementById('album-art').src = "https://unsplash.com";
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.log("Błąd pobierania metadanych z serwerów muzycznych.");
+        }
+    }
+
+    // Odświeżaj tytuł i okładkę co 15 sekund
+    setInterval(updateTrackInfo, 15000);
+    updateTrackInfo();
+</script>
 </body>
 </html>
