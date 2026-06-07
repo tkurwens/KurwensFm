@@ -7,14 +7,14 @@
 
 <style>
 body {
-    background:#121212;
-    color:white;
-    font-family:Arial;
+    margin:0;
+    height:100vh;
     display:flex;
     justify-content:center;
     align-items:center;
-    height:100vh;
-    margin:0;
+    background:#121212;
+    color:white;
+    font-family:Arial;
 }
 
 .player {
@@ -25,13 +25,16 @@ body {
     text-align:center;
 }
 
-#album-art {
+#cover {
     width:200px;
     height:200px;
     border-radius:10px;
-    background:#333;
     object-fit:cover;
+    background:#333;
 }
+
+h2 { margin:10px 0 5px; color:#1db954; }
+p { margin:4px 0; color:#ccc; }
 
 button {
     margin-top:15px;
@@ -50,95 +53,119 @@ button {
 
 <div class="player">
 
-    <img id="album-art" src="https://picsum.photos/300" />
+    <img id="cover" src="https://via.placeholder.com/300" />
 
-    <h2 id="song-title">Kurwens FM</h2>
-    <p id="artist">Stacja Online</p>
-    <p id="meta">Album: - | Rok: -</p>
+    <h2 id="title">Loading...</h2>
+    <p id="artist">---</p>
+    <p id="album">Album: ---</p>
+    <p id="year">Rok: ---</p>
 
-    <button id="btn">ODTWÓRZ</button>
+    <button id="btn">PLAY</button>
 
-    <audio id="radio" crossorigin="anonymous"></audio>
+    <audio id="radio"></audio>
 
 </div>
 
 <script>
-const STREAM_URL =
+/* ================= STREAM ================= */
+const STREAM =
 "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
 
 const audio = document.getElementById("radio");
-const btn = document.getElementById("btn");
+audio.src = STREAM;
 
-audio.src = STREAM_URL;
+const btn = document.getElementById("btn");
 
 let playing = false;
 
-// --- PLAY / STOP ---
+/* ================= PLAY / STOP ================= */
 btn.onclick = async () => {
-    if (!playing) {
+    if(!playing){
         await audio.play();
-        startICY();
+        startMetadata();
         btn.innerText = "STOP";
         playing = true;
     } else {
         audio.pause();
-        btn.innerText = "ODTWÓRZ";
+        btn.innerText = "PLAY";
         playing = false;
     }
 };
 
-// --- ICY METADATA PARSER ---
-async function startICY() {
-    try {
-        const res = await fetch(STREAM_URL, {
+/* ================= ICY METADATA ================= */
+async function startMetadata(){
+
+    try{
+        const res = await fetch(STREAM, {
             headers: { "Icy-MetaData": "1" }
         });
 
         const metaInt = parseInt(res.headers.get("icy-metaint")) || 16000;
         const reader = res.body.getReader();
 
-        let buffer = new Uint8Array(0);
-        let bytes = 0;
+        let count = 0;
+        let buffer = new Uint8Array();
 
-        while (playing) {
+        while(playing){
             const { value, done } = await reader.read();
-            if (done) break;
+            if(done) break;
 
-            let chunk = new Uint8Array(value);
-            bytes += chunk.length;
+            count += value.length;
 
-            buffer = chunk;
+            buffer = value;
 
-            // ICY metadata pojawia się co metaInt bajtów
-            if (bytes >= metaInt) {
+            if(count >= metaInt){
                 const text = new TextDecoder().decode(buffer);
-
-                parseICY(text);
-
-                bytes = 0;
+                parseMetadata(text);
+                count = 0;
             }
         }
-    } catch (e) {
-        console.log("ICY error:", e);
+
+    } catch(e){
+        console.log("Metadata error:", e);
     }
 }
 
-// --- PARSOWANIE METADANYCH ---
-function parseICY(data) {
-    if (!data.includes("StreamTitle='")) return;
+/* ================= PARSE STREAM TITLE ================= */
+function parseMetadata(data){
 
-    let title = data.split("StreamTitle='")[1].split("';")[0];
+    if(!data.includes("StreamTitle='")) return;
 
-    if (title.includes("-")) {
-        let [artist, song] = title.split("-");
-        document.getElementById("artist").innerText = artist.trim();
-        document.getElementById("song-title").innerText = song.trim();
-    } else {
-        document.getElementById("song-title").innerText = title;
+    const raw = data.split("StreamTitle='")[1].split("';")[0];
+
+    let artist = "Unknown";
+    let title = raw;
+
+    if(raw.includes("-")){
+        [artist, title] = raw.split("-");
     }
 
-    // ❗ album i rok NIE są standardem ICY
-    // więc zostają tylko jeśli Twój serwer je faktycznie wysyła
+    document.getElementById("artist").innerText = artist.trim();
+    document.getElementById("title").innerText = title.trim();
+
+    /* Album / rok – tylko jeśli serwer to wysyła */
+    document.getElementById("album").innerText = "Album: ---";
+    document.getElementById("year").innerText = "Rok: ---";
+
+    loadCover(artist.trim(), title.trim());
+}
+
+/* ================= COVER (Last.fm fallback) ================= */
+function loadCover(artist, title){
+
+    const query = encodeURIComponent(artist + " " + title);
+
+    fetch(`https://itunes.apple.com/search?term=${query}&limit=1`)
+    .then(r => r.json())
+    .then(data => {
+
+        if(data.results && data.results[0]){
+            document.getElementById("cover").src =
+                data.results[0].artworkUrl100.replace("100x100", "300x300");
+        }
+
+    })
+    .catch(()=>{});
 }
 </script>
 
