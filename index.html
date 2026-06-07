@@ -67,6 +67,7 @@ button {
 </div>
 
 <script>
+
 /* ================= STREAM ================= */
 const STREAM =
 "https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
@@ -77,6 +78,9 @@ audio.src = STREAM;
 const btn = document.getElementById("btn");
 
 let playing = false;
+
+/* 🔥 CACHE AKTUALNEGO UTWORU */
+let lastTrack = "";
 
 /* ================= PLAY / STOP ================= */
 btn.onclick = async () => {
@@ -111,7 +115,6 @@ async function startMetadata(){
             if(done) break;
 
             count += value.length;
-
             buffer = value;
 
             if(count >= metaInt){
@@ -126,7 +129,7 @@ async function startMetadata(){
     }
 }
 
-/* ================= PARSE STREAM TITLE ================= */
+/* ================= PARSE METADATA ================= */
 function parseMetadata(data){
 
     if(!data.includes("StreamTitle='")) return;
@@ -140,17 +143,25 @@ function parseMetadata(data){
         [artist, title] = raw.split("-");
     }
 
-    document.getElementById("artist").innerText = artist.trim();
-    document.getElementById("title").innerText = title.trim();
+    artist = artist.trim();
+    title = title.trim();
 
-    /* Album / rok – tylko jeśli serwer to wysyła */
+    const currentTrack = artist + " - " + title;
+
+    /* 🔥 FIX: NIE ODŚWIEŻAJ JEŚLI TEN SAM UTWÓR */
+    if(currentTrack === lastTrack) return;
+    lastTrack = currentTrack;
+
+    document.getElementById("artist").innerText = artist;
+    document.getElementById("title").innerText = title;
+
     document.getElementById("album").innerText = "Album: ---";
     document.getElementById("year").innerText = "Rok: ---";
 
-    loadCover(artist.trim(), title.trim());
+    loadCover(artist, title);
 }
 
-/* ================= COVER (Last.fm fallback) ================= */
+/* ================= COVER ================= */
 function loadCover(artist, title){
 
     const query = encodeURIComponent(artist + " " + title);
@@ -167,6 +178,7 @@ function loadCover(artist, title){
     })
     .catch(()=>{});
 }
+
 </script>
 
 </body>
