@@ -31,6 +31,7 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             margin-bottom: 20px;
             background-color: #333;
+            transition: opacity 0.3s ease;
         }
         h2 { margin: 10px 0 5px 0; font-size: 20px; color: #1db954; }
         .artist { color: #ffffff; font-size: 16px; margin: 0 0 5px 0; font-weight: bold; }
@@ -52,108 +53,115 @@
 <body>
 
 <div class="player-container">
-    <!-- Poprawiony domyślny obrazek placeholder, gdy nie ma okładki -->
     <img id="album-art" src="https://unsplash.com" alt="Okładka">
     
     <h2 id="song-title">Kurwens FM</h2>
     <p class="artist" id="artist-name">Stacja Online</p>
-    <p class="meta-text" id="song-meta">Album: ... | Rok: ...</p>
+    <p class="meta-text" id="song-meta">Album: Brak danych</p>
     
     <button class="play-btn" id="play-pause">ODTWÓRZ</button>
 </div>
 
+<!-- Niewidoczny odtwarzacz audio, który stabilnie i bezbłędnie odtwarza dźwięk -->
+<audio id="radio-player" crossorigin="anonymous"></audio>
+
 <script>
-    const RADIO_STREAM = "https://allorigins.win/raw?url=" + encodeURIComponent("https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599");
+    // Bezpośredni link do strumienia (bez proxy, dla stabilności odtwarzacza HTML5)
+    const STREAM_URL = "https://listen2myradio.com";
+    // Link proxy używany wyłącznie do bezpiecznego czytania samych metadanych tekstowych
+    const META_STREAM = "https://allorigins.win" + encodeURIComponent(STREAM_URL);
+    const DEFAULT_ART = "https://unsplash.com";
 
-    let audioCtx, source, processor;
-    let isPlaying = false;
+    const audio = document.getElementById('radio-player');
     const playBtn = document.getElementById('play-pause');
+    
+    let isPlaying = false;
+    let currentTrack = ""; 
+    let metaReader = null;
 
-    // Zmienne do przechowywania aktualnego stanu metadanych
-    let currentAlbum = "...";
-    let currentYear = "...";
-
-    playBtn.addEventListener('click', async () => {
+    playBtn.addEventListener('click', () => {
         if (!isPlaying) {
-            startStream();
-            playBtn.innerText = "ZATRZYMAJ";
-            isPlaying = true;
+            audio.src = STREAM_URL;
+            audio.play()
+                .then(() => {
+                    playBtn.innerText = "ZATRZYMAJ";
+                    isPlaying = true;
+                    startMetaFetch(); // Uruchomienie pobierania nazw piosenek i okładek
+                })
+                .catch(err => console.error("Błąd odtwarzania:", err));
         } else {
-            stopStream();
+            audio.pause();
+            audio.src = ""; // Reset strumienia, aby nie buforował w tle
             playBtn.innerText = "ODTWÓRZ";
             isPlaying = false;
+            if (metaReader) metaReader.cancel();
         }
     });
 
-    async function startStream() {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
+    // Funkcja czytająca nagłówki ICY w tle bez blokowania głośników
+    async function startMetaFetch() {
         try {
-            const response = await fetch(RADIO_STREAM, {
-                headers: { 'Icy-MetaData': '1' } 
-            });
-            
+            const response = await fetch(META_STREAM, { headers: { 'Icy-MetaData': '1' } });
             const metaInt = parseInt(response.headers.get('icy-metaint')) || 16000;
-            const reader = response.body.getReader();
+            metaReader = response.body.getReader();
             
-            processor = audioCtx.createScriptProcessor(4096, 0, 2);
-            processor.connect(audioCtx.destination);
+            let textDecoder = new TextDecoder('utf-8');
 
             while (isPlaying) {
-                const { done, value } = await reader.read();
+                const { done, value } = await metaReader.read();
                 if (done) break;
-                parseByteArray(value, metaInt);
+                
+                let rawText = textDecoder.decode(value);
+
+                if (rawText.includes("StreamTitle='")) {
+                    let parts = rawText.split("StreamTitle='");
+                    if (parts.length > 1) {
+                        let songData = parts[1].split("';")[0];
+                        
+                        if (songData && songData !== currentTrack) {
+                            currentTrack = songData;
+                            
+                            if (songData.includes("-")) {
+                                let trackParts = songData.split('-');
+                                let artist = trackParts[0].trim();
+                                let title = trackParts[1].trim();
+                                
+                                document.getElementById('artist-name').innerText = artist;
+                                document.getElementById('song-title').innerText = title;
+                                
+                                fetchCoverArt(artist, title);
+                            }
+                        }
+                    }
+                }
             }
         } catch (e) {
-            console.log("Oczekiwanie na połączenie ze strumieniem ICY...");
+            console.log("Wyszukiwanie metadanych...");
         }
     }
 
-    function parseByteArray(bytes, metaInt) {
-        let textDecoder = new TextDecoder('utf-8');
-        let rawText = textDecoder.decode(bytes);
+    // Pobieranie okładek w locie z bazy iTunes
+    async function fetchCoverArt(artist, title) {
+        let query = encodeURIComponent(`${artist} ${title}`);
+        let url = `https://apple.com{query}&media=music&limit=1`;
 
-        // Wyciąganie Tytułu i Wykonawcy
-        if (rawText.includes("StreamTitle='")) {
-            let songData = rawText.split("StreamTitle='")[1].split("';")[0];
-            if (songData.includes("-")) {
-                let parts = songData.split('-');
-                document.getElementById('artist-name').innerText = parts[0].trim();
-                document.getElementById('song-title').innerText = parts[1].trim();
-            }
-        }
-        
-        // Wyciąganie tagu ALBUMU i dynamiczna zmiana okładki
-        if (rawText.includes("StreamAlbum='")) {
-            let album = rawText.split("StreamAlbum='")[1].split("';")[0].trim();
-            if (album && album !== currentAlbum) {
-                currentAlbum = album;
-                updateMetaText();
+        try {
+            let res = await fetch(url);
+            let data = await res.json();
+
+            if (data.results && data.results.length > 0) {
+                let track = data.results[0];
+                let highResCover = track.artworkUrl100.replace("100x100bb", "300x300bb");
                 
-                // Tworzenie poprawnej nazwy pliku graficznego z małych liter
-                let lowercaseAlbum = currentAlbum.toLowerCase();
-                document.getElementById('album-art').src = encodeURIComponent(lowercaseAlbum) + ".jpg";
+                document.getElementById('album-art').src = highResCover;
+                document.getElementById('song-meta').innerText = `Album: ${track.collectionName || 'Brak danych'}`;
+            } else {
+                document.getElementById('album-art').src = DEFAULT_ART;
+                document.getElementById('song-meta').innerText = "Album: Nieznany";
             }
+        } catch (error) {
+            document.getElementById('album-art').src = DEFAULT_ART;
         }
-        
-        // Wyciąganie tagu ROKU
-        if (rawText.includes("StreamYear='")) {
-            let year = rawText.split("StreamYear='")[1].split("';")[0].trim();
-            if (year && year !== currentYear) {
-                currentYear = year;
-                updateMetaText();
-            }
-        }
-    }
-
-    // Pomocnicza funkcja aktualizująca tekst albumu i roku
-    function updateMetaText() {
-        document.getElementById('song-meta').innerText = `Album: ${currentAlbum} | Rok: ${currentYear}`;
-    }
-
-    function stopStream() {
-        if (audioCtx) audioCtx.close();
-        isPlaying = false;
     }
 </script>
 
