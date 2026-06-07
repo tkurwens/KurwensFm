@@ -2,111 +2,151 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>Radio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kurwens FM</title>
 
 <style>
-body{
-    margin:0;
-    height:100vh;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    background:#121212;
-    color:white;
-    font-family:Arial;
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #121212;
+    color: white;
+    font-family: Arial, sans-serif;
 }
 
-.box{
-    text-align:center;
-    background:#1e1e1e;
-    padding:20px;
-    border-radius:15px;
-    width:300px;
+.player {
+    background: #1e1e1e;
+    padding: 25px;
+    border-radius: 15px;
+    width: 320px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
-img{
-    width:200px;
-    height:200px;
-    border-radius:10px;
-    background:#333;
+#cover {
+    width: 200px;
+    height: 200px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #333;
 }
 
-h2{color:#1db954;}
+h2 {
+    margin: 10px 0 5px;
+    color: #1db954;
+    font-size: 20px;
+}
+
+p {
+    margin: 4px 0;
+    color: #ccc;
+    font-size: 14px;
+}
+
+button {
+    margin-top: 15px;
+    padding: 10px 25px;
+    border: none;
+    border-radius: 20px;
+    background: #1db954;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+button:hover {
+    background: #1ed760;
+}
 </style>
 </head>
 
 <body>
 
-<div class="box">
+<div class="player">
 
-    <img id="cover">
+    <img id="cover" src="https://via.placeholder.com/300">
+
     <h2 id="title">Loading...</h2>
     <p id="artist">---</p>
+    <p id="album">Album: ---</p>
+    <p id="year">Rok: ---</p>
 
-    <button onclick="start()">PLAY</button>
+    <button id="btn">PLAY</button>
 
-    <audio id="audio" crossorigin="anonymous"></audio>
+    <audio id="radio"></audio>
 
 </div>
 
 <script>
 
-const STREAM =
-"https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
+/* ================= STREAM ================= */
+const STREAM ="https://uk23freenew.listen2myradio.com/live.mp3?typeportmount=s1_37783_stream_442779599";
+
+/* ================= JSON METADATA ================= */
+const JSON_URL ="https://raw.githubusercontent.com/tkurwens/KurwensFm/main/nowplaying.json"; // <- wrzuć plik do repo GitHub Pages
 
 const audio = document.getElementById("radio");
 audio.src = STREAM;
 
 let playing = false;
-let last = "";
+let lastTrack = "";
 
-const JSON_URL = "https://github.com/tkurwens/KurwensFm/blob/main/nowplaying.json";
-
+/* ================= PLAY / STOP ================= */
 document.getElementById("btn").onclick = async () => {
 
-    if(!playing){
-        audio.play();
-        startJSON();
+    if (!playing) {
+        try {
+            await audio.play();
+        } catch (e) {
+            console.log("Autoplay blocked:", e);
+        }
+
+        startMetadataLoop();
         playing = true;
         document.getElementById("btn").innerText = "STOP";
+
     } else {
         audio.pause();
         playing = false;
         document.getElementById("btn").innerText = "PLAY";
     }
 };
-    
-function startJSON(){
+
+/* ================= METADATA LOOP ================= */
+function startMetadataLoop() {
 
     setInterval(async () => {
 
-        if(!playing) return;
+        if (!playing) return;
 
         try {
             const res = await fetch(JSON_URL + "?t=" + Date.now());
             const data = await res.json();
 
-            const current = data.artist + data.title;
+            const current = data.artist + " - " + data.title;
 
-            if(current === last) return;
-            last = current;
+            if (current === lastTrack) return;
+            lastTrack = current;
 
             document.getElementById("artist").innerText = data.artist || "---";
-            document.getElementById("title").innerText = data.title || "---";
+            document.getElementById("title").innerText = data.title || "Loading...";
             document.getElementById("album").innerText = "Album: " + (data.album || "---");
             document.getElementById("year").innerText = "Rok: " + (data.year || "---");
 
-            if(data.cover){
+            if (data.cover) {
                 document.getElementById("cover").src = data.cover;
             }
 
-        } catch(e){
-            console.log("JSON error", e);
+        } catch (e) {
+            console.log("JSON error:", e);
         }
 
     }, 4000);
 }
-
 
 </script>
 
