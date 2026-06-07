@@ -130,7 +130,7 @@
         if (rawText.includes("StreamYear='")) {
             let year = rawText.split("StreamYear='")[1].split("';")[0];
             let currentMeta = document.getElementById('song-meta').innerText;
-            document.getElementById('song-meta').innerText = currentMeta + ` | Rok: ${year}`;
+           document.getElementById('album-art').src = encodeURIComponent(lowercaseAlbum) + ".jpg";
         }
     }
 
